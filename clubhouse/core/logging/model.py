@@ -4,10 +4,11 @@ Data models for the structured logging system.
 This module defines the core data structures used by the logging system,
 including the LogEntry class that implements the LogEntryProtocol.
 """
-from typing import Dict, Any, Optional
-from datetime import datetime
+
 import json
 import traceback
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 from clubhouse.core.logging.protocol import LogEntryProtocol, LogLevel
 
@@ -15,11 +16,11 @@ from clubhouse.core.logging.protocol import LogEntryProtocol, LogLevel
 class LogEntry:
     """
     A structured log entry implementation.
-    
+
     This class implements the LogEntryProtocol and provides a concrete
     implementation of a log entry with all required properties.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -32,7 +33,7 @@ class LogEntry:
     ):
         """
         Initialize a new log entry.
-        
+
         Args:
             message: The log message
             level: The log level
@@ -49,41 +50,41 @@ class LogEntry:
         self._extra = extra.copy()
         self._exception = exception
         self._include_traceback = include_traceback
-    
+
     @property
     def timestamp(self) -> datetime:
         """Get the timestamp when the log entry was created."""
         return self._timestamp
-    
+
     @property
     def level(self) -> LogLevel:
         """Get the log level."""
         return self._level
-    
+
     @property
     def message(self) -> str:
         """Get the log message."""
         return self._message
-    
+
     @property
     def context(self) -> Dict[str, Any]:
         """Get the context associated with this log entry."""
         return self._context.copy()
-    
+
     @property
     def extra(self) -> Dict[str, Any]:
         """Get additional data associated with this log entry."""
         return self._extra.copy()
-    
+
     @property
     def exception(self) -> Optional[Exception]:
         """Get the exception that triggered this log entry, if any."""
         return self._exception
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the log entry to a dictionary representation.
-        
+
         Returns:
             A dictionary representation of the log entry suitable for
             serialization to JSON.
@@ -94,41 +95,41 @@ class LogEntry:
             "level_value": int(self._level),
             "message": self._message,
         }
-        
+
         # Include context if not empty
         if self._context:
             result["context"] = _sanitize_for_json(self._context)
-        
+
         # Include extra data if not empty
         if self._extra:
             result["data"] = _sanitize_for_json(self._extra)
-        
+
         # Include exception information if available
         if self._exception:
             result["exception"] = {
                 "type": type(self._exception).__name__,
                 "message": str(self._exception),
             }
-            
+
             # Include traceback if configured
             if self._include_traceback:
                 result["exception"]["traceback"] = _format_traceback(self._exception)
-        
+
         return result
 
 
 def _sanitize_for_json(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Sanitize a dictionary to ensure all values are JSON serializable.
-    
+
     Args:
         data: The dictionary to sanitize
-        
+
     Returns:
         A new dictionary with all values converted to JSON-serializable types
     """
     result = {}
-    
+
     for key, value in data.items():
         if isinstance(value, dict):
             result[key] = _sanitize_for_json(value)
@@ -141,20 +142,20 @@ def _sanitize_for_json(data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             # For other types, convert to string
             result[key] = str(value)
-    
+
     return result
 
 
 def _format_traceback(exception: Exception) -> str:
     """
     Format a traceback for an exception.
-    
+
     Args:
         exception: The exception to format
-        
+
     Returns:
         A formatted traceback string
     """
-    return "".join(traceback.format_exception(
-        type(exception), exception, exception.__traceback__
-    ))
+    return "".join(
+        traceback.format_exception(type(exception), exception, exception.__traceback__)
+    )

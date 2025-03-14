@@ -1,0 +1,287 @@
+"""
+Configuration management for MCP integration.
+
+This module provides Pydantic models for strongly-typed configuration management,
+with support for environment variable loading and validation.
+"""
+import os
+from enum import Enum
+from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+
+class LogLevel(str, Enum):
+    """Valid log levels for the application."""
+    
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+class MCPConfig(BaseModel):
+    """
+    Configuration for the MCP server.
+    
+    Attributes:
+        host: The host to bind the MCP server to
+        port: The port to bind the MCP server to
+        log_level: The log level for the MCP server
+        timeout_seconds: Timeout for MCP operations in seconds
+    """
+    
+    model_config = ConfigDict(
+        validate_assignment=True,
+        frozen=True,
+    )
+    
+    host: str = Field(default="127.0.0.1", description="Host to bind MCP server to")
+    port: int = Field(default=8000, description="Port to bind MCP server to", ge=1, le=65535)
+    log_level: LogLevel = Field(default=LogLevel.INFO, description="Log level for MCP server")
+    timeout_seconds: float = Field(default=10.0, description="Timeout for MCP operations in seconds", gt=0)
+    
+    @field_validator('log_level', mode='before')
+    @classmethod
+    def validate_log_level(cls, v):
+        """Ensure log_level is a valid LogLevel enum value."""
+        if isinstance(v, str):
+            try:
+                return LogLevel(v.lower())
+            except ValueError:
+                valid_values = [level.value for level in LogLevel]
+                raise ValueError(f"Invalid log level. Must be one of: {', '.join(valid_values)}")
+        return v
+
+
+class KafkaConfig(BaseModel):
+    """
+    Configuration for Kafka integration.
+    
+    Attributes:
+        bootstrap_servers: Comma-separated list of Kafka broker addresses
+        topic_prefix: Prefix for all Kafka topics
+        group_id: Consumer group ID
+        client_id: Client ID for Kafka producer/consumer
+    """
+    
+    model_config = ConfigDict(
+        validate_assignment=True,
+        frozen=True,
+    )
+    
+    bootstrap_servers: str = Field(
+        default="localhost:9092", 
+        description="Comma-separated list of Kafka broker addresses"
+    )
+    topic_prefix: str = Field(
+        default="", 
+        description="Prefix for all Kafka topics"
+    )
+    group_id: Optional[str] = Field(
+        default=None, 
+        description="Consumer group ID"
+    )
+    client_id: Optional[str] = Field(
+        default=None, 
+        description="Client ID for Kafka producer/consumer"
+    )
+    auto_offset_reset: str = Field(
+        default="earliest", 
+        description="Auto offset reset policy",
+    )
+    
+    @field_validator('auto_offset_reset')
+    @classmethod
+    def validate_auto_offset_reset(cls, v):
+        """Ensure auto_offset_reset is a valid value."""
+        valid_values = ["earliest", "latest", "none"]
+        if v not in valid_values:
+            raise ValueError(f"Invalid auto_offset_reset. Must be one of: {', '.join(valid_values)}")
+        return v
+    
+    def to_producer_config(self) -> Dict[str, Any]:
+        """
+        Convert this configuration to a Kafka producer configuration dictionary.
+        
+        Returns:
+            A dictionary suitable for initializing a Kafka producer
+        """
+        config = {"bootstrap.servers": self.bootstrap_servers}
+        
+        if self.client_id:
+            config["client.id"] = self.client_id
+            
+        return config
+    
+    def to_consumer_config(self) -> Dict[str, Any]:
+        """
+        Convert this configuration to a Kafka consumer configuration dictionary.
+        
+        Returns:
+            A dictionary suitable for initializing a Kafka consumer
+        """
+        config = {
+            "bootstrap.servers": self.bootstrap_servers,
+            "auto.offset.reset": self.auto_offset_reset,
+        }
+        
+        if self.group_id:
+            config["group.id"] = self.group_id
+            
+        if self.client_id:
+            config["client.id"] = self.client_id
+            
+        return config
+
+
+class SchemaRegistryConfig(BaseModel):
+    """
+    Configuration for Schema Registry integration.
+    
+    Attributes:
+        url: URL of the Schema Registry server
+        basic_auth_user_info: Basic auth credentials in format username:password
+    """
+    
+    model_config = ConfigDict(
+        validate_assignment=True,
+        frozen=True,
+    )
+    
+    url: str = Field(
+        default="http://localhost:8081", 
+        description="URL of the Schema Registry server"
+    )
+    basic_auth_user_info: Optional[str] = Field(
+        default=None, 
+        description="Basic auth credentials in format username:password"
+    )
+    
+    def to_client_config(self) -> Dict[str, Any]:
+        """
+        Convert this configuration to a Schema Registry client configuration dictionary.
+        
+        Returns:
+            A dictionary suitable for initializing a Schema Registry client
+        """
+        config = {"url": self.url}
+        
+        if self.basic_auth_user_info:
+            config["basic.auth.user.info"] = self.basic_auth_user_info
+            
+        return config
+
+
+class AppConfig(BaseModel):
+    """
+    Main application configuration.
+    
+    This is the root configuration object that contains all other configuration sections.
+    
+    Attributes:
+        mcp: MCP server configuration
+        kafka: Kafka integration configuration
+        schema_registry: Schema Registry integration configuration
+    """
+    
+    model_config = ConfigDict(
+        validate_assignment=True,
+        frozen=True,
+    )
+    
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
+    kafka: KafkaConfig = Field(default_factory=KafkaConfig)
+    schema_registry: SchemaRegistryConfig = Field(default_factory=SchemaRegistryConfig)
+
+
+def load_config_from_env() -> MCPConfig:
+    """
+    Load MCP configuration from environment variables.
+    
+    Environment variables:
+        MCP_HOST: Host to bind MCP server to
+        MCP_PORT: Port to bind MCP server to
+        MCP_LOG_LEVEL: Log level for MCP server
+        MCP_TIMEOUT_SECONDS: Timeout for MCP operations in seconds
+    
+    Returns:
+        MCPConfig object with values from environment variables or defaults
+    """
+    # Check for environment variables with defaults
+    host_str = os.getenv("MCP_HOST", "")
+    host = host_str if host_str.strip() else MCPConfig().host
+    
+    # Handle empty string or non-existent port gracefully
+    port_str = os.getenv("MCP_PORT", "")
+    port = int(port_str) if port_str.strip() else MCPConfig().port
+    
+    # Get log level from env or use default, ensure empty string uses default
+    log_level_str = os.getenv("MCP_LOG_LEVEL", "")
+    # Use default if empty string
+    log_level = LogLevel(log_level_str) if log_level_str.strip() else MCPConfig().log_level
+    
+    # Handle empty string or non-existent timeout gracefully
+    timeout_str = os.getenv("MCP_TIMEOUT_SECONDS", "")
+    timeout_seconds = float(timeout_str) if timeout_str.strip() else MCPConfig().timeout_seconds
+    
+    return MCPConfig(
+        host=host,
+        port=port,
+        log_level=log_level,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def load_kafka_config_from_env() -> KafkaConfig:
+    """
+    Load Kafka configuration from environment variables.
+    
+    Environment variables:
+        KAFKA_BOOTSTRAP_SERVERS: Comma-separated list of Kafka broker addresses
+        KAFKA_TOPIC_PREFIX: Prefix for all Kafka topics
+        KAFKA_GROUP_ID: Consumer group ID
+        KAFKA_CLIENT_ID: Client ID for Kafka producer/consumer
+        KAFKA_AUTO_OFFSET_RESET: Auto offset reset policy
+    
+    Returns:
+        KafkaConfig object with values from environment variables or defaults
+    """
+    return KafkaConfig(
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", KafkaConfig().bootstrap_servers),
+        topic_prefix=os.getenv("KAFKA_TOPIC_PREFIX", KafkaConfig().topic_prefix),
+        group_id=os.getenv("KAFKA_GROUP_ID", KafkaConfig().group_id),
+        client_id=os.getenv("KAFKA_CLIENT_ID", KafkaConfig().client_id),
+        auto_offset_reset=os.getenv("KAFKA_AUTO_OFFSET_RESET", KafkaConfig().auto_offset_reset),
+    )
+
+
+def load_schema_registry_config_from_env() -> SchemaRegistryConfig:
+    """
+    Load Schema Registry configuration from environment variables.
+    
+    Environment variables:
+        SCHEMA_REGISTRY_URL: URL of the Schema Registry server
+        SCHEMA_REGISTRY_AUTH: Basic auth credentials in format username:password
+    
+    Returns:
+        SchemaRegistryConfig object with values from environment variables or defaults
+    """
+    return SchemaRegistryConfig(
+        url=os.getenv("SCHEMA_REGISTRY_URL", SchemaRegistryConfig().url),
+        basic_auth_user_info=os.getenv("SCHEMA_REGISTRY_AUTH", SchemaRegistryConfig().basic_auth_user_info),
+    )
+
+
+def load_app_config_from_env() -> AppConfig:
+    """
+    Load all application configuration from environment variables.
+    
+    Returns:
+        AppConfig object with all configuration sections
+    """
+    return AppConfig(
+        mcp=load_config_from_env(),
+        kafka=load_kafka_config_from_env(),
+        schema_registry=load_schema_registry_config_from_env(),
+    )

@@ -101,7 +101,7 @@ def load_schema(schema_path: str) -> Dict[str, Any]:
         Schema definition as a dictionary
     """
     with open(schema_path, "r") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore[any_return]
 
 
 # pragma: no cover

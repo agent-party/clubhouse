@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from clubhouse.core.config.models.kafka_config import KafkaConfig
 from clubhouse.core.config.models.mcp_config import MCPConfig
 from clubhouse.core.config.models.schema_registry_config import SchemaRegistryConfig
+from typing import cast, List, Dict, Any, Type
 
 
 class AppConfig(BaseModel):

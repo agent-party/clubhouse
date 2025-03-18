@@ -5,6 +5,7 @@ Schema Registry configuration model.
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import cast, List, Dict, Any, Type
 
 
 class SchemaRegistryConfig(BaseModel):

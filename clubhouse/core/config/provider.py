@@ -5,6 +5,9 @@ This module provides the main configuration provider class that implements
 the ConfigProtocol and manages multiple configuration layers.
 """
 
+import os
+import logging
+from copy import deepcopy
 from typing import (
     Any,
     Callable,
@@ -12,11 +15,13 @@ from typing import (
     Generic,
     List,
     Optional,
-    Tuple,
+    Set,
     Type,
     TypeVar,
     Union,
     cast,
+    get_type_hints,
+    overload,
 )
 
 from pydantic import BaseModel, create_model
@@ -42,7 +47,7 @@ class ConfigurationProvider(Generic[T_co], ConfigProtocol[T_co]):
 
     def __init__(
         self, model_type: Type[T_co], layers: Optional[List[ConfigLayerProtocol]] = None
-    ):
+    ) -> None:
         """
         Initialize the configuration provider.
 

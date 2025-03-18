@@ -42,7 +42,7 @@ class StructuredLogger:
         config: LoggingConfig,
         handlers: Optional[List[LogHandlerProtocol]] = None,
         parent_context: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         """
         Initialize a new structured logger.
 
@@ -232,7 +232,7 @@ class StructuredLogger:
         _log_context.reset(token)
 
     @staticmethod
-    async def with_async_context(context_updates: Dict[str, Any], coro):
+    async def with_async_context(context_updates: Dict[str, Any], coro) -> None:
         """
         Run a coroutine with updated context.
 
@@ -248,6 +248,6 @@ class StructuredLogger:
         """
         token = StructuredLogger.update_context(**context_updates)
         try:
-            return await coro
+            return await coro  # type: ignore[any_return]
         finally:
             StructuredLogger.reset_context(token)

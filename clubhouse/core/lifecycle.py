@@ -12,6 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from clubhouse.core.config import MCPConfig
 from clubhouse.core.mcp_service_registry import MCPServiceRegistry
 from clubhouse.services.mcp_protocol import MCPServerProtocol
+from typing import cast, List, Dict, Any, Type
 
 # Type definition for lifecycle hooks
 LifecycleHook = Callable[[], Awaitable[None]]

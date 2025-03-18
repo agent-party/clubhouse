@@ -7,6 +7,7 @@ the Confluent Kafka client library with Schema Registry support.
 
 import json
 import logging
+import time
 import uuid
 from datetime import datetime
 from typing import (
@@ -22,7 +23,8 @@ from typing import (
     cast,
 )
 
-from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
+from confluent_kafka import Consumer as ConfluentKafkaConsumer, KafkaError, KafkaException, Producer as ConfluentKafkaProducer
+from confluent_kafka import KafkaError as KafkaError  # Explicitly import KafkaError
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from pydantic import BaseModel, Field, field_validator
 
@@ -86,10 +88,20 @@ class KafkaMessage(BaseModel):
         """Validate topic name."""
         if not v:
             raise ValueError("topic cannot be empty")
+        
+        # Kafka has a limit of 249 characters for topic names
+        if len(v) > 249:
+            raise ValueError("Topic name is too long (max 249 characters)")
+            
+        # Check for other Kafka topic name constraints
+        if "." in v and ".." in v:
+            raise ValueError("Topic name cannot contain '..'")
+            
+        # All good
         return v
 
 
-class ConfluentKafkaProducer(KafkaProducerProtocol):
+class ConfluentBaseKafkaProducer(KafkaProducerProtocol):
     """
     Confluent Kafka producer implementation.
 
@@ -102,6 +114,7 @@ class ConfluentKafkaProducer(KafkaProducerProtocol):
         config: KafkaConfig,
         serializer: SerializerProtocol[Dict[str, Any]],
         key_serializer: Optional[SerializerProtocol[str]] = None,
+        producer: Optional[ConfluentKafkaProducer] = None,
     ) -> None:
         """
         Initialize the Confluent Kafka producer.
@@ -110,6 +123,7 @@ class ConfluentKafkaProducer(KafkaProducerProtocol):
             config: Kafka configuration
             serializer: Serializer for message values
             key_serializer: Optional serializer for message keys
+            producer: Optional pre-configured producer for testing
         """
         producer_config = {
             "bootstrap.servers": config.bootstrap_servers,
@@ -118,7 +132,7 @@ class ConfluentKafkaProducer(KafkaProducerProtocol):
         if config.client_id:
             producer_config["client.id"] = config.client_id
 
-        self._producer = Producer(producer_config)
+        self._producer = producer or ConfluentKafkaProducer(producer_config)
         self._serializer = serializer
         self._key_serializer = key_serializer or JSONSerializer()
         self._default_delivery_callback = self._delivery_report
@@ -204,7 +218,7 @@ class ConfluentKafkaProducer(KafkaProducerProtocol):
             KafkaException: If there is an error flushing the producer
         """
         try:
-            return self._producer.flush(timeout=timeout if timeout is not None else -1)
+            return self._producer.flush(timeout=timeout if timeout is not None else -1)  # type: ignore[any_return]
         except KafkaException as e:  # pragma: no cover
             logger.error(f"Error flushing producer: {e}")
             raise
@@ -223,13 +237,13 @@ class ConfluentKafkaProducer(KafkaProducerProtocol):
             KafkaException: If there is an error polling the producer
         """
         try:
-            return self._producer.poll(timeout=timeout if timeout is not None else 0)
+            return self._producer.poll(timeout=timeout if timeout is not None else 0)  # type: ignore[any_return]
         except KafkaException as e:  # pragma: no cover
             logger.error(f"Error polling producer: {e}")
             raise
 
 
-class ConfluentKafkaConsumer(KafkaConsumerProtocol):
+class ConfluentBaseKafkaConsumer(KafkaConsumerProtocol):
     """
     Confluent Kafka consumer implementation.
 
@@ -242,6 +256,7 @@ class ConfluentKafkaConsumer(KafkaConsumerProtocol):
         config: KafkaConfig,
         deserializer: DeserializerProtocol[Dict[str, Any]],
         key_deserializer: Optional[DeserializerProtocol[str]] = None,
+        consumer: Optional[ConfluentKafkaConsumer] = None,
     ) -> None:
         """
         Initialize the Confluent Kafka consumer.
@@ -250,6 +265,7 @@ class ConfluentKafkaConsumer(KafkaConsumerProtocol):
             config: Kafka configuration
             deserializer: Deserializer for message values
             key_deserializer: Optional deserializer for message keys
+            consumer: Optional pre-configured consumer for testing
         """
         if not config.group_id:
             raise ValueError("group_id is required for consumers")
@@ -264,7 +280,7 @@ class ConfluentKafkaConsumer(KafkaConsumerProtocol):
         if config.client_id:
             consumer_config["client.id"] = config.client_id
 
-        self._consumer = Consumer(consumer_config)
+        self._consumer = consumer or ConfluentKafkaConsumer(consumer_config)
         self._deserializer = deserializer
         self._key_deserializer = key_deserializer or JSONDeserializer()
         self._running = False
@@ -374,22 +390,50 @@ class ConfluentKafkaService:
         self._consumer = None
         self._running = False
 
-    def get_producer(self) -> ConfluentKafkaProducer:
+    def get_producer(self, producer: Optional[KafkaProducerProtocol] = None) -> KafkaProducerProtocol:
         """
         Get or create a Kafka producer.
+
+        Args:
+            producer: Optional pre-configured producer for testing
 
         Returns:
             Kafka producer instance
         """
+        if producer:
+            return producer
+
         if not self._producer:
-            self._producer = ConfluentKafkaProducer(
-                config=self._config, serializer=self._value_serializer
-            )
+            # Set proper connection timeout to prevent indefinite hanging
+            producer_config = {
+                "bootstrap.servers": self._config.bootstrap_servers,
+                "socket.timeout.ms": 10000,  # 10 second socket timeout
+                "request.timeout.ms": 15000,  # 15 second request timeout
+                "message.timeout.ms": 20000,  # 20 second message delivery timeout
+            }
+
+            if self._config.client_id:
+                producer_config["client.id"] = self._config.client_id
+
+            try:
+                # Initialize the producer with proper timeouts
+                self._producer = ConfluentBaseKafkaProducer(
+                    self._config,
+                    self._value_serializer,
+                    producer=ConfluentKafkaProducer(producer_config)
+                )
+            except Exception as e:
+                logger.error(f"Failed to create Kafka producer: {e}")
+                raise
+
         return self._producer
 
-    def get_consumer(self) -> ConfluentKafkaConsumer:
+    def get_consumer(self, consumer: Optional[KafkaConsumerProtocol] = None) -> KafkaConsumerProtocol:
         """
         Get or create a Kafka consumer.
+
+        Args:
+            consumer: Optional pre-configured consumer for testing
 
         Returns:
             Kafka consumer instance
@@ -397,10 +441,40 @@ class ConfluentKafkaService:
         Raises:
             ValueError: If group_id is not provided in config
         """
+        if consumer:
+            return consumer
+
         if not self._consumer:
-            self._consumer = ConfluentKafkaConsumer(
-                config=self._config, deserializer=self._value_deserializer
-            )
+            if not self._config.group_id:
+                raise ValueError("group_id is required for consumers")
+
+            # Set proper connection timeout to prevent indefinite hanging
+            consumer_config = {
+                "bootstrap.servers": self._config.bootstrap_servers,
+                "group.id": self._config.group_id,
+                "auto.offset.reset": self._config.auto_offset_reset,
+                "enable.auto.commit": str(self._config.enable_auto_commit).lower(),
+                "session.timeout.ms": 10000,       # 10 second session timeout
+                "max.poll.interval.ms": 30000,     # 30 second poll interval timeout
+                "socket.timeout.ms": 10000,        # 10 second socket timeout
+                "request.timeout.ms": 15000,       # 15 second request timeout
+                "metadata.request.timeout.ms": 10000,  # 10 second metadata request timeout
+            }
+
+            if self._config.client_id:
+                consumer_config["client.id"] = self._config.client_id
+
+            try:
+                # Initialize consumer with proper timeouts
+                self._consumer = ConfluentBaseKafkaConsumer(
+                    self._config,
+                    self._value_deserializer,
+                    consumer=ConfluentKafkaConsumer(consumer_config)
+                )
+            except Exception as e:
+                logger.error(f"Failed to create Kafka consumer: {e}")
+                raise
+
         return self._consumer
 
     def set_avro_serializer(self, schema: Dict[str, Any]) -> None:
@@ -416,8 +490,16 @@ class ConfluentKafkaService:
         if not self._config.schema_registry_url:
             raise ValueError("Schema registry URL is required for Avro serialization")
 
-        client = SchemaRegistryClient({"url": self._config.schema_registry_url})
-        self._value_serializer = AvroSchemaSerializer(client, schema)
+        try:
+            client = SchemaRegistryClient({"url": self._config.schema_registry_url})
+            self._value_serializer = AvroSchemaSerializer(client, schema)  # type: ignore[type_assignment]
+            logger.info(f"Avro serializer configured with schema: {schema.get('name', 'unknown')}")
+            
+            # Reset the producer so it will be recreated with the new serializer
+            self._producer = None
+        except Exception as e:
+            logger.error(f"Failed to configure Avro serializer: {e}")
+            raise
 
     def set_avro_deserializer(self, schema: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -432,8 +514,16 @@ class ConfluentKafkaService:
         if not self._config.schema_registry_url:
             raise ValueError("Schema registry URL is required for Avro deserialization")
 
-        client = SchemaRegistryClient({"url": self._config.schema_registry_url})
-        self._value_deserializer = AvroSchemaDeserializer(client, schema)
+        try:
+            client = SchemaRegistryClient({"url": self._config.schema_registry_url})
+            self._value_deserializer = AvroSchemaDeserializer(client, schema)  # type: ignore[type_assignment]
+            logger.info(f"Avro deserializer configured{' with schema' if schema else ' to fetch schema from registry'}")
+            
+            # Reset the consumer so it will be recreated with the new deserializer
+            self._consumer = None
+        except Exception as e:
+            logger.error(f"Failed to configure Avro deserializer: {e}")
+            raise
 
     def produce_message(self, message: KafkaMessage) -> None:
         """
@@ -459,7 +549,8 @@ class ConfluentKafkaService:
         self,
         topics: List[str],
         handler: MessageHandlerProtocol[Dict[str, Any], str],
-        timeout: float = 1.0,
+        poll_timeout: float = 1.0,
+        max_runtime: float = 10.0,
     ) -> None:
         """
         Consume messages from Kafka topics.
@@ -467,69 +558,150 @@ class ConfluentKafkaService:
         Args:
             topics: List of topics to consume from
             handler: Handler for consumed messages
-            timeout: Poll timeout in seconds
+            poll_timeout: Timeout for polling messages in seconds
+            max_runtime: Maximum time to run consumer loop in seconds before exiting
 
         Raises:
             ValueError: If handler is not provided
-            KafkaException: If there is an error consuming messages
+            KafkaException: If there is an error with Kafka operations
         """
         if not handler:
-            raise ValueError("Message handler is required")
+            raise ValueError("Message handler must be provided")
+
+        # Store handler reference if it supports service access
+        if hasattr(handler, "service"):
+            handler.service = self
 
         consumer = self.get_consumer()
-        consumer.subscribe(topics)
-        self._running = True
-
-        logger.info(f"Started consuming from topics: {topics}")
-
+        
         try:
+            # Subscribe to topics
+            consumer.subscribe(topics)
+            self._running = True
+            logger.info(f"Started consuming from topics: {topics}")
+
+            # Set up absolute timeout to prevent indefinite hanging
+            start_time = time.time()
+            empty_poll_count = 0
+            max_empty_polls = 5  # Break after multiple consecutive empty polls
+            
+            # Main consumer loop with proper timeouts
             while self._running:
-                msg = consumer.poll(timeout)
+                # Stop consuming if max_runtime exceeded
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_runtime:
+                    logger.warning(f"Kafka consumer exceeded max runtime of {max_runtime}s, stopping")
+                    break
+
+                # Calculate remaining time for poll
+                remaining_time = max(0.1, min(poll_timeout, max_runtime - elapsed_time))
+                
+                # Poll for messages with dynamic timeout
+                msg = consumer.poll(remaining_time)
 
                 if msg is None:
+                    empty_poll_count += 1
+                    logger.debug(f"No message received, poll count: {empty_poll_count}")
+                    
+                    # Break if we've had multiple empty polls and approaching timeout
+                    if empty_poll_count >= max_empty_polls and elapsed_time > (max_runtime * 0.8):
+                        logger.info(f"Breaking after {empty_poll_count} empty polls, elapsed time: {elapsed_time:.2f}s")
+                        break
                     continue
+                
+                # Reset empty poll counter when we get a message
+                empty_poll_count = 0
 
-                if msg.error():  # pragma: no cover
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        # End of partition event - not an error
-                        logger.debug("Reached end of partition")
+                # Handle any errors
+                if msg.error():
+                    error_code = msg.error().code()
+                    
+                    # End of partition is not an error, just means we've read all available messages
+                    if error_code == KafkaError._PARTITION_EOF:
+                        logger.debug(f"Reached end of partition for {msg.topic()}/{msg.partition()}")
+                        continue
+                    # Ignore timeout errors - they are expected when polling with a timeout
+                    elif error_code == KafkaError._TIMED_OUT:
+                        continue
                     else:
-                        # Error
-                        logger.error(f"Error while consuming: {msg.error()}")
-                else:
-                    # Process the message
-                    try:
-                        # Deserialize value and key
-                        value = self._value_deserializer.deserialize(
-                            msg.topic(), msg.value()
+                        # For all other errors, log and decide whether to break
+                        error_str = str(msg.error()).lower()
+                        
+                        # Check for critical errors that should stop the consumer
+                        is_critical = (
+                            # Check for specific error conditions using the error string
+                            "unknown topic" in error_str or
+                            "unknown partition" in error_str or
+                            "invalid arg" in error_str or
+                            "auth" in error_str or
+                            "fatal" in error_str
                         )
-                        key = msg.key().decode("utf-8") if msg.key() else None
+                        
+                        if is_critical:
+                            logger.error(f"Critical Kafka error: {msg.error()}")
+                            # Store the error to raise outside the loop
+                            consumer_error = msg.error()
+                            break
+                        else:
+                            logger.warning(f"Kafka error: {msg.error()}")
+                            continue
+                try:
+                    # Get value
+                    value = self._value_deserializer.deserialize(msg.topic(), msg.value())
 
-                        # Convert headers to dictionary if present
-                        headers = None
-                        if msg.headers():  # pragma: no cover
-                            headers = {k: v.decode("utf-8") for k, v in msg.headers()}
+                    # Get key if present
+                    key = None
+                    if msg.key() is not None:
+                        if hasattr(consumer, '_key_deserializer'):
+                            # Use consumer's key deserializer if available
+                            key = consumer._key_deserializer.deserialize(msg.topic(), msg.key())
+                        else:
+                            # Fallback to basic UTF-8 decoding
+                            key = msg.key().decode('utf-8')
 
-                        # Handle the message
-                        handler.handle(value, key, headers)
+                    # Get headers if present
+                    headers = None
+                    if msg.headers():
+                        headers = {}
+                        for k, v in msg.headers():
+                            if isinstance(v, bytes):
+                                v = v.decode('utf-8')
+                            headers[k] = v
 
-                        # Commit the offset if auto commit is disabled
-                        if not self._config.enable_auto_commit:
-                            consumer.commit(msg)
-
-                    except Exception as e:  # pragma: no cover
-                        logger.error(f"Error processing message: {e}")
-
-        except KafkaException as e:  # pragma: no cover
+                    # Handle message
+                    handler.handle(value, key, headers)
+                    
+                    # Commit offset for processed message if auto-commit is disabled
+                    if not self._config.enable_auto_commit:
+                        consumer.commit(msg)
+                        
+                except Exception as e:
+                    logger.error(f"Error processing message: {e}")
+                    # Continue processing other messages instead of breaking
+                    # This is more resilient to individual message processing failures
+            
+            # Gracefully stop the consumer
+            logger.info(f"Consumer loop completed after {time.time() - start_time:.2f}s")
+            
+        except KafkaException as e:
             logger.error(f"Kafka error: {e}")
             raise
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise
         finally:
-            # Close the consumer
-            self.stop_consuming()
+            # Ensure we clean up consumer resources
+            self._running = False
+            try:
+                consumer.close()
+                logger.info("Kafka consumer closed")
+            except Exception as e:
+                logger.warning(f"Error closing consumer: {e}")
 
     def stop_consuming(self) -> None:
         """Stop consuming messages."""
         self._running = False
         if self._consumer:
             self._consumer.close()
+            self._consumer = None  # Reset consumer instance
             logger.info("Stopped consuming messages")

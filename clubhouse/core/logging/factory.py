@@ -47,7 +47,7 @@ class LoggerFactory:
                 cls._instance = LoggerFactory()
             return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a new logger factory."""
         self._config = LoggingConfig()
         self._handlers: List[LogHandlerProtocol] = []
@@ -126,7 +126,7 @@ class LoggerFactory:
 
             elif handler_config.type == "file":
                 filename = handler_config.options.get("filename", "logs/app.log")
-                handler = FileHandler(
+                handler = FileHandler(  # type: ignore[type_assignment]
                     filename=filename,
                     level=handler_config.level,
                     format=handler_config.format,

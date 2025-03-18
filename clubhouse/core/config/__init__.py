@@ -38,6 +38,7 @@ from clubhouse.core.config.protocol import (
 
 # Import Provider
 from clubhouse.core.config.provider import ConfigurationProvider
+from typing import cast, List, Dict, Any, Type
 
 # Singleton instance of the configuration provider
 _config_provider: Optional[ConfigurationProvider] = None

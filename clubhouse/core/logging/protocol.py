@@ -8,6 +8,7 @@ must adhere to, ensuring consistency across the framework.
 import enum
 from datetime import datetime
 from typing import Any, Dict, Optional, Protocol, TypeVar
+from typing import cast, List, Dict, Any, Type
 
 
 class LogLevel(enum.IntEnum):

@@ -64,7 +64,7 @@ def load_schema(schema_path: str) -> Dict[str, Any]:  # pragma: no cover
         Schema definition as a dictionary
     """
     with open(schema_path, "r") as f:  # pragma: no cover
-        return json.load(f)  # pragma: no cover
+        return json.load(f)  # pragma: no cover  # type: ignore[any_return]
 
 
 def example_json_producer() -> None:  # pragma: no cover

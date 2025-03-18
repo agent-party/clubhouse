@@ -1,70 +1,66 @@
-version: '3.8'
-
 services:
-  clubhouse:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    volumes:
-      - ./:/app
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
-      - PYTHONPATH=/app
-    depends_on:
-      - kafka
-      - schema-registry
-    networks:
-      - clubhouse-network
-
   kafka:
     image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
     ports:
       - "9092:9092"
     environment:
-      # KRaft mode configuration
-      - KAFKA_NODE_ID=1
-      - KAFKA_PROCESS_ROLES=broker,controller
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_BROKER_ID=1
-      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_TOOLS_LOG4J_LOGLEVEL=INFO
+      KAFKA_NODE_ID: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://:9093,INTERNAL://0.0.0.0:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:
       - clubhouse-network
+    command: 
+      - sh
+      - -c
+      - |
+        if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+          kafka-storage format -t $$CLUSTER_ID -c /etc/kafka/kafka.properties
+        fi
+        /etc/confluent/docker/run
 
   schema-registry:
     image: confluentinc/cp-schema-registry:7.4.0
-    depends_on:
-      - kafka
+    container_name: schema-registry
     ports:
       - "8081:8081"
     environment:
-      - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=kafka:9092
-      - SCHEMA_REGISTRY_HOST_NAME=schema-registry
-      - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    depends_on:
+      - kafka
     networks:
       - clubhouse-network
 
-  kafdrop:
-    image: obsidiandynamics/kafdrop:3.30.0
+  neo4j:
+    image: neo4j:5.13.0
+    container_name: neo4j
     ports:
-      - "9000:9000"
+      - "7474:7474"
+      - "7687:7687"
     environment:
-      - KAFKA_BROKERCONNECT=kafka:9092
-      - JVM_OPTS=-Xms32M -Xmx64M
-      - SERVER_SERVLET_CONTEXTPATH=/
-    depends_on:
-      - kafka
+      NEO4J_AUTH: neo4j/testpassword
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_initial__size: 512M
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
     networks:
       - clubhouse-network
 
@@ -74,3 +70,5 @@ networks:
 
 volumes:
   kafka_data:
+  neo4j_data:
+  neo4j_logs:

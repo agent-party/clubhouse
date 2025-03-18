@@ -6,7 +6,7 @@ This module provides a high-level interface for interacting with Kafka.
 
 import json
 import logging
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, TypeVar, TypedDict, Self, NotRequired, cast
 
 from confluent_kafka import KafkaError, KafkaException
 from pydantic import BaseModel, ValidationError
@@ -20,7 +20,40 @@ from clubhouse.services.kafka_protocol import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-K = TypeVar("K")
+
+
+class KafkaMessageHeaders(TypedDict):
+    """Type definition for Kafka message headers."""
+    name: str
+    value: str
+
+
+class KafkaMessageValue(TypedDict):
+    """Base type definition for Kafka message values."""
+    pass
+
+
+class KafkaMessageWithMetadata(TypedDict):
+    """Type definition for Kafka message with metadata."""
+    topic: str
+    value: Dict[str, Any]  
+    key: NotRequired[str]
+    headers: NotRequired[Dict[str, str]]
+
+
+class KafkaServiceError(Exception):
+    """Base exception for Kafka service errors."""
+    pass
+
+
+class MessageProducerError(KafkaServiceError):
+    """Exception raised when producing a message fails."""
+    pass
+
+
+class MessageConsumerError(KafkaServiceError):
+    """Exception raised when consuming a message fails."""
+    pass
 
 
 class KafkaMessage(BaseModel):
@@ -43,7 +76,7 @@ class KafkaService:
         self,
         producer: KafkaProducerProtocol,
         consumer: KafkaConsumerProtocol,
-    ):
+    ) -> None:
         """
         Initialize the Kafka service.
 
@@ -61,16 +94,21 @@ class KafkaService:
 
         Args:
             message: The message to produce
+
+        Raises:
+            ValueError: If topic is missing
+            ValidationError: If message fails validation
+            MessageProducerError: If there's an error producing the message
         """
         try:
             # Convert message to a dictionary
-            if isinstance(message.value, BaseModel):  # pragma: no cover
+            if isinstance(message.value, BaseModel):  
                 value_dict = message.value.dict()
             else:
                 value_dict = message.value
 
             # Validate the message
-            if not message.topic:  # pragma: no cover
+            if not message.topic:
                 raise ValueError("Topic is required")
 
             # Produce the message
@@ -84,9 +122,15 @@ class KafkaService:
             # Flush to ensure delivery
             self._producer.flush()
 
-        except (ValidationError, KafkaException) as e:  # pragma: no cover
-            logger.error("Error producing message: %s", e)
+        except ValidationError as e:
+            logger.error("Validation error producing message: %s", e)
             raise
+        except KafkaException as e:
+            logger.error("Kafka error producing message: %s", e)
+            raise MessageProducerError(f"Failed to produce message: {e}") from e
+        except Exception as e:
+            logger.error("Unexpected error producing message: %s", e)
+            raise MessageProducerError(f"Unexpected error producing message: {e}") from e
 
     def consume_messages(
         self,
@@ -103,8 +147,12 @@ class KafkaService:
             topics: Topics to consume from
             handler: Function to handle messages
             timeout: Poll timeout in seconds
+
+        Raises:
+            ValueError: If no topics are provided
+            MessageConsumerError: If there's an error consuming messages
         """
-        if not topics:  # pragma: no cover
+        if not topics:
             raise ValueError("At least one topic is required")
 
         try:
@@ -120,24 +168,25 @@ class KafkaService:
                 # Poll for messages
                 msg = self._consumer.poll(timeout)
 
-                if msg is None:  # pragma: no cover
+                if msg is None:
                     continue
 
-                if msg.error():  # pragma: no cover
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        # End of partition event - not an error
-                        logger.debug("Reached end of partition")
-                    else:
-                        # Error
-                        logger.error("Consumer error: %s", msg.error())
+                if msg.error():
+                    match msg.error().code():
+                        case KafkaError._PARTITION_EOF:
+                            # End of partition event - not an error
+                            logger.debug("Reached end of partition")
+                        case _:
+                            # Error
+                            logger.error("Consumer error: %s", msg.error())
                     continue
 
                 # Process the message
                 try:
                     # Parse the value as JSON
-                    value = json.loads(msg.value().decode("utf-8"))
-                    key = msg.key().decode("utf-8") if msg.key() else None
-                    headers = (
+                    value: Dict[str, Any] = json.loads(msg.value().decode("utf-8"))
+                    key: Optional[str] = msg.key().decode("utf-8") if msg.key() else None
+                    headers: Optional[Dict[str, str]] = (
                         msg.headers()
                         if hasattr(msg, "headers") and callable(msg.headers)
                         else None
@@ -146,22 +195,58 @@ class KafkaService:
                     # Call the handler with the message value, key, and headers
                     handler(value, key, headers)
 
-                except json.JSONDecodeError as e:  # pragma: no cover
+                except json.JSONDecodeError as e:
                     logger.error("Error decoding message: %s", e)
-                except Exception as e:  # pragma: no cover
+                except Exception as e:
                     logger.error("Error processing message: %s", e)
 
-        except KafkaException as e:  # pragma: no cover
-            logger.error("Kafka error: %s", e)
-            raise
+        except KafkaException as e:
+            logger.error("Kafka error during consumption: %s", e)
+            raise MessageConsumerError(f"Failed to consume messages: {e}") from e
+        except Exception as e:
+            logger.error("Unexpected error during consumption: %s", e)
+            raise MessageConsumerError(f"Unexpected error during consumption: {e}") from e
         finally:
             # Close the consumer
-            if self._consumer and hasattr(self._consumer, "close"):
-                self._consumer.close()
-                logger.info("Consumer closed")
+            try:
+                if self._consumer and hasattr(self._consumer, "close"):
+                    self._consumer.close()
+                    logger.info("Consumer closed")
+            except Exception as e:
+                logger.warning("Error closing consumer: %s", e)
 
     def stop_consuming(self) -> None:
         """Stop consuming messages."""
         self._running = False
-        self._consumer.close()
-        logger.info("Stopped consuming messages")
+        try:
+            self._consumer.close()
+            logger.info("Stopped consuming messages")
+        except Exception as e:
+            logger.warning("Error stopping consumer: %s", e)
+            
+    @classmethod
+    def create(cls, config: Dict[str, Any]) -> Self:
+        """
+        Create a new KafkaService instance from configuration.
+        
+        Args:
+            config: Configuration dictionary for the Kafka service
+            
+        Returns:
+            A new KafkaService instance
+            
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        from confluent_kafka import Consumer, Producer
+        
+        try:
+            producer_config = config.get("producer", {})
+            consumer_config = config.get("consumer", {})
+            
+            producer = Producer(producer_config)
+            consumer = Consumer(consumer_config)
+            
+            return cls(producer=producer, consumer=consumer)
+        except Exception as e:
+            raise ValueError(f"Failed to create KafkaService: {e}") from e

@@ -6,22 +6,23 @@ the Model Context Protocol (MCP).
 """
 
 from typing import Any, Protocol, runtime_checkable
-
+from typing import cast, List, Dict, Any, Type
+from typing import Callable
 
 # Define a protocol for the FastMCP server to avoid direct dependency
 @runtime_checkable
 class MCPServerProtocol(Protocol):
     """Protocol defining the interface of an MCP server."""
 
-    def tool(self, *args, **kwargs):
+    def tool(self, *args: Any, **kwargs: Any) -> None:
         """Register a tool with the MCP server."""
         ...
 
-    def resource(self, uri_template, *args, **kwargs):
+    def resource(self, uri_template: str, *args: Any, **kwargs: Any) -> None:
         """Register a resource with the MCP server."""
         ...
 
-    def middleware(self, func):
+    def middleware(self, func: Callable[..., Any]) -> None:
         """Register middleware with the MCP server."""
         ...
 

@@ -16,11 +16,21 @@ from typing import (
     Protocol,
     TypeVar,
     Union,
+    cast,
+    Type
 )
 
-# Type variables for generic schemas
-T = TypeVar("T")
-K = TypeVar("K")
+# Define proper variance for type variables
+# Contravariant for input parameters (where data flows in)
+T_contra = TypeVar('T_contra', contravariant=True)
+K_contra = TypeVar('K_contra', contravariant=True)
+
+# Covariant for return values (where data flows out)
+T_co = TypeVar('T_co', covariant=True)
+
+# Regular invariant type variable for when both are needed
+T = TypeVar('T')
+K = TypeVar('K')
 
 
 class SchemaRegistryProtocol(Protocol):
@@ -66,10 +76,10 @@ class SchemaRegistryProtocol(Protocol):
         ...
 
 
-class SerializerProtocol(Protocol, Generic[T]):
+class SerializerProtocol(Protocol, Generic[T_contra]):
     """Protocol for serializing messages."""
 
-    def serialize(self, topic: str, data: T) -> bytes:  # pragma: no cover
+    def serialize(self, topic: str, data: T_contra) -> bytes:  # pragma: no cover
         """
         Serialize data for a specific topic.
 
@@ -83,10 +93,10 @@ class SerializerProtocol(Protocol, Generic[T]):
         ...
 
 
-class DeserializerProtocol(Protocol, Generic[T]):
+class DeserializerProtocol(Protocol, Generic[T_co]):
     """Protocol for deserializing messages."""
 
-    def deserialize(self, topic: str, data: bytes) -> T:  # pragma: no cover
+    def deserialize(self, topic: str, data: bytes) -> T_co:  # pragma: no cover
         """
         Deserialize data from a specific topic.
 
@@ -189,13 +199,13 @@ class KafkaConsumerProtocol(Protocol):
         ...
 
 
-class MessageHandlerProtocol(Protocol, Generic[T, K]):
+class MessageHandlerProtocol(Protocol, Generic[T_contra, K_contra]):
     """Protocol for message handlers."""
 
     def handle(
         self,
-        value: T,
-        key: Optional[K] = None,
+        value: T_contra,
+        key: Optional[K_contra] = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> None:  # pragma: no cover
         """

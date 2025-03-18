@@ -33,7 +33,7 @@ class ConsoleHandler:
         format: str = "json",
         output_stream: Optional[TextIO] = None,
         use_colors: bool = True,
-    ):
+    ) -> None:
         """
         Initialize a new console handler.
 
@@ -145,7 +145,7 @@ class FileHandler:
         format: str = "json",
         max_size: int = 10 * 1024 * 1024,  # 10 MB
         backup_count: int = 5,
-    ):
+    ) -> None:
         """
         Initialize a new file handler.
 
@@ -256,4 +256,4 @@ class FileHandler:
             if self._file:
                 self._file.flush()
                 self._file.close()
-                self._file = None
+                self._file = None  # type: ignore[type_assignment]

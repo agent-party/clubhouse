@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from clubhouse.core.config.protocol import ConfigLayerProtocol
+from typing import cast, List, Dict, Any, Type
 
 
 class ConfigLayer(BaseModel):
@@ -191,7 +192,7 @@ class DefaultsLayer(ConfigLayer):
         name: str = "defaults",
         priority: int = 0,
         defaults: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> None:
         """
         Initialize with default values.
 
@@ -223,7 +224,7 @@ class EnvironmentLayer(ConfigLayer):
         prefix: str = "CLUBHOUSE",
         separator: str = "_",
         custom_separators: Optional[List[str]] = None,
-    ):
+    ) -> None:
         """
         Initialize the environment layer.
 
@@ -363,7 +364,7 @@ class FileLayer(ConfigLayer):
         name: str = "file",
         priority: int = 50,
         format: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Initialize the file layer.
 

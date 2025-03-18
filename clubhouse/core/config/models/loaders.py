@@ -5,13 +5,14 @@ This module provides functions for loading configuration from environment variab
 """
 
 import os
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 from clubhouse.core.config.models.app_config import AppConfig
 from clubhouse.core.config.models.kafka_config import KafkaConfig
 from clubhouse.core.config.models.log_level import LogLevel
 from clubhouse.core.config.models.mcp_config import MCPConfig
 from clubhouse.core.config.models.schema_registry_config import SchemaRegistryConfig
+from typing import cast, List, Dict, Any, Type
 
 
 def load_config_from_env() -> MCPConfig:
@@ -27,10 +28,10 @@ def load_config_from_env() -> MCPConfig:
     Returns:
         MCPConfig: Configuration object with values from environment variables or defaults
     """
-    host = os.environ.get("MCP_HOST")
-    port_str = os.environ.get("MCP_PORT")
-    log_level_str = os.environ.get("MCP_LOG_LEVEL")
-    timeout_str = os.environ.get("MCP_TIMEOUT_SECONDS")
+    host: Optional[str] = os.environ.get("MCP_HOST")
+    port_str: Optional[str] = os.environ.get("MCP_PORT")
+    log_level_str: Optional[str] = os.environ.get("MCP_LOG_LEVEL")
+    timeout_str: Optional[str] = os.environ.get("MCP_TIMEOUT_SECONDS")
 
     # Build kwargs with only the values that are set
     kwargs: Dict[str, Any] = {}
@@ -66,11 +67,11 @@ def load_kafka_config_from_env() -> KafkaConfig:
     Returns:
         KafkaConfig: Configuration object with values from environment variables or defaults
     """
-    bootstrap_servers = os.environ.get("KAFKA_BOOTSTRAP_SERVERS")
-    topic_prefix = os.environ.get("KAFKA_TOPIC_PREFIX")
-    group_id = os.environ.get("KAFKA_GROUP_ID")
-    client_id = os.environ.get("KAFKA_CLIENT_ID")
-    auto_offset_reset = os.environ.get("KAFKA_AUTO_OFFSET_RESET")
+    bootstrap_servers: Optional[str] = os.environ.get("KAFKA_BOOTSTRAP_SERVERS")
+    topic_prefix: Optional[str] = os.environ.get("KAFKA_TOPIC_PREFIX")
+    group_id: Optional[str] = os.environ.get("KAFKA_GROUP_ID")
+    client_id: Optional[str] = os.environ.get("KAFKA_CLIENT_ID")
+    auto_offset_reset: Optional[str] = os.environ.get("KAFKA_AUTO_OFFSET_RESET")
 
     # Build kwargs with only the values that are set
     kwargs: Dict[str, Any] = {}
@@ -99,8 +100,8 @@ def load_schema_registry_config_from_env() -> SchemaRegistryConfig:
     Returns:
         SchemaRegistryConfig: Configuration object with values from environment variables or defaults
     """
-    url = os.environ.get("SCHEMA_REGISTRY_URL")
-    basic_auth = os.environ.get("SCHEMA_REGISTRY_BASIC_AUTH")
+    url: Optional[str] = os.environ.get("SCHEMA_REGISTRY_URL")
+    basic_auth: Optional[str] = os.environ.get("SCHEMA_REGISTRY_BASIC_AUTH")
 
     # Build kwargs with only the values that are set
     kwargs: Dict[str, Any] = {}

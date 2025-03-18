@@ -8,9 +8,10 @@ including the LogEntry class that implements the LogEntryProtocol.
 import json
 import traceback
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from clubhouse.core.logging.protocol import LogEntryProtocol, LogLevel
+from clubhouse.core.utils.datetime_utils import utc_now
 
 
 class LogEntry:
@@ -30,7 +31,7 @@ class LogEntry:
         timestamp: Optional[datetime] = None,
         exception: Optional[Exception] = None,
         include_traceback: bool = True,
-    ):
+    ) -> None:
         """
         Initialize a new log entry.
 
@@ -43,7 +44,7 @@ class LogEntry:
             exception: Optional exception that triggered this log entry
             include_traceback: Whether to include traceback for exceptions
         """
-        self._timestamp = timestamp or datetime.utcnow()
+        self._timestamp = timestamp or utc_now()
         self._level = level
         self._message = message
         self._context = context.copy()
@@ -136,12 +137,12 @@ def _sanitize_for_json(data: Dict[str, Any]) -> Dict[str, Any]:
         elif hasattr(value, "to_dict") and callable(value.to_dict):
             result[key] = value.to_dict()
         elif isinstance(value, datetime):
-            result[key] = value.isoformat()
+            result[key] = value.isoformat()  # type: ignore[type_assignment]
         elif isinstance(value, (str, int, float, bool, type(None))):
-            result[key] = value
+            result[key] = value  # type: ignore[type_assignment]
         else:
             # For other types, convert to string
-            result[key] = str(value)
+            result[key] = str(value)  # type: ignore[type_assignment]
 
     return result
 

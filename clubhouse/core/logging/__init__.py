@@ -9,6 +9,7 @@ from clubhouse.core.logging.config import LoggingConfig, LogHandlerConfig
 from clubhouse.core.logging.factory import LoggerFactory, configure_logging, get_logger
 from clubhouse.core.logging.handlers import ConsoleHandler, FileHandler
 from clubhouse.core.logging.logger import StructuredLogger
+from typing import cast, List, Dict, Any, Type
 
 # Export public API
 from clubhouse.core.logging.protocol import (

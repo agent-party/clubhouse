@@ -5,6 +5,7 @@ Kafka configuration model.
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import cast, List, Dict, Any, Type
 
 
 class KafkaConfig(BaseModel):

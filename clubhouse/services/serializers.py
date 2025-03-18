@@ -10,10 +10,11 @@ import logging
 from typing import Any, Dict, Generic, Optional, TypeVar
 
 from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
+from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer, SerializationContext
 from pydantic import BaseModel
 
 from clubhouse.services.kafka_protocol import DeserializerProtocol, SerializerProtocol
+from typing import cast, List, Dict, Any, Type
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ class JSONDeserializer(DeserializerProtocol[Dict[str, Any]]):
         try:
             if data is None:  # pragma: no cover
                 return {}
-            return json.loads(data.decode("utf-8"))
+            return json.loads(data.decode("utf-8"))  # type: ignore[any_return]
         except json.JSONDecodeError as e:  # pragma: no cover
             logger.error(f"Failed to deserialize data: {e}")
             raise
@@ -103,6 +104,7 @@ class AvroSchemaSerializer(SerializerProtocol[Dict[str, Any]]):
             json.dumps(schema),
             lambda obj, ctx: obj,  # Identity function for Python dict to dict conversion
         )
+        self._serialization_context = SerializationContext
 
     def serialize(self, topic: str, data: Dict[str, Any]) -> bytes:  # pragma: no cover
         """
@@ -119,8 +121,10 @@ class AvroSchemaSerializer(SerializerProtocol[Dict[str, Any]]):
             Exception: If serialization fails
         """
         try:
-            ctx = SerializationContext(topic)  # pragma: no cover
-            return self._serializer(data, ctx)
+            # Use the proper SerializationContext from confluent_kafka.schema_registry.avro
+            # Specify 'value' as the message_field
+            ctx = self._serialization_context(topic, 'value')  # pragma: no cover
+            return self._serializer(data, ctx)  # type: ignore[any_return]
         except Exception as e:  # pragma: no cover
             logger.error(f"Failed to serialize data: {e}")
             raise
@@ -151,6 +155,7 @@ class AvroSchemaDeserializer(DeserializerProtocol[Dict[str, Any]]):
             schema_str,
             lambda obj, ctx: obj,  # Identity function for Avro dict to Python dict conversion
         )
+        self._serialization_context = SerializationContext
 
     def deserialize(
         self, topic: str, data: bytes
@@ -171,23 +176,11 @@ class AvroSchemaDeserializer(DeserializerProtocol[Dict[str, Any]]):
         try:
             if data is None:  # pragma: no cover
                 return {}
-            ctx = SerializationContext(topic)  # pragma: no cover
-            return self._deserializer(data, ctx)
+            
+            # Use the proper SerializationContext class, consistently with the serializer
+            ctx = self._serialization_context(topic, 'value')
+            
+            return self._deserializer(data, ctx)  # type: ignore[any_return]
         except Exception as e:  # pragma: no cover
             logger.error(f"Failed to deserialize data: {e}")
             raise
-
-
-class SerializationContext:  # pragma: no cover
-    """
-    Context object for serialization/deserialization.
-    """
-
-    def __init__(self, topic: str) -> None:  # pragma: no cover
-        """
-        Initialize the serialization context.
-
-        Args:
-            topic: Kafka topic
-        """
-        self.topic = topic

@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, Optional, Type, TypeVar, cast
 
 from clubhouse.services.mcp_protocol import MCPIntegrationProtocol, MCPServerProtocol
+from typing import cast, List, Dict, Any, Type
 
 
 class MCPServiceRegistry:

@@ -7,6 +7,7 @@ This module defines Pydantic models for configuring the logging system.
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+from typing import cast, List, Dict, Any, Type
 
 
 class LogHandlerConfig(BaseModel):
